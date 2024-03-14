@@ -502,16 +502,17 @@ pub fn parse_cfg_raw_string(
     if layer_exprs.is_empty() {
         bail!("No deflayer expressions exist. At least one layer must be defined.")
     }
-    if layer_exprs.len() > MAX_LAYERS {
+    if layer_exprs.len() > cfg.max_layers_limit {
         let spanned = spanned_root_exprs
             .iter()
             .filter(gen_first_atom_filter_spanned("deflayer"))
-            .nth(MAX_LAYERS)
-            .expect(">25 layers");
+            .nth(cfg.max_layers_limit)
+            .expect(&format!(">{} layers", cfg.max_layers_limit));
         bail_span!(
             spanned,
-            "Exceeded the maximum number of layers ({MAX_LAYERS}), the layer shown is #{}",
-            MAX_LAYERS + 1
+            "Exceeded the maximum number of layers ({}), the layer shown is #{}",
+            cfg.max_layers_limit,
+            cfg.max_layers_limit + 1
         )
     }
 
@@ -618,7 +619,7 @@ pub fn parse_cfg_raw_string(
         .collect::<Vec<_>>();
     parse_aliases(&alias_exprs, s)?;
 
-    let mut klayers = parse_layers(s)?;
+    let mut klayers = parse_layers(s, &cfg)?;
 
     resolve_chord_groups(&mut klayers, s)?;
 
@@ -2602,10 +2603,10 @@ fn parse_live_reload_file(ac_params: &[SExpr], s: &ParsedState) -> Result<&'stat
     )))))
 }
 
-fn parse_layers(s: &mut ParsedState) -> Result<Box<KanataLayers>> {
+fn parse_layers(s: &mut ParsedState, defcfg: &CfgOptions) -> Result<Box<KanataLayers>> {
     // There are two copies/versions of each layer. One is used as the target of "layer-switch" and
     // the other is the target of "layer-while-held".
-    let mut layers_cfg = new_layers();
+    let mut layers_cfg = new_layers(); //defcfg.max_layers_limit);
     for (layer_level, layer) in s.layer_exprs.iter().enumerate() {
         // The skip is done to skip the the `deflayer` and layer name tokens.
         for (i, ac) in layer.iter().skip(2).enumerate() {

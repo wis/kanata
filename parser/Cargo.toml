@@ -20,6 +20,7 @@ radix_trie = "0.2"
 rustc-hash = "1.1.0"
 miette = { version = "5.7.0", features = ["fancy"] }
 thiserror = "1.0.38"
+num-traits = "0.2"
 
 # kanata-keyberon = "0.160.1"
 # Uncomment below and comment out above for testing local changes.

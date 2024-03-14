@@ -5,6 +5,8 @@ use crate::cfg::check_first_expr;
 use crate::custom_action::*;
 #[allow(unused)]
 use crate::{anyhow_expr, anyhow_span, bail, bail_expr, bail_span};
+use num_traits::Bounded;
+use std::str::FromStr;
 
 #[derive(Debug)]
 pub struct CfgOptions {
@@ -22,6 +24,7 @@ pub struct CfgOptions {
     pub dynamic_macro_replay_delay_behaviour: ReplayDelayBehaviour,
     pub concurrent_tap_hold: bool,
     pub rapid_event_delay: u16,
+    pub max_layers_limit: usize,
     #[cfg(any(target_os = "linux", target_os = "unknown"))]
     pub linux_dev: Vec<String>,
     #[cfg(any(target_os = "linux", target_os = "unknown"))]
@@ -69,6 +72,7 @@ impl Default for CfgOptions {
             dynamic_macro_replay_delay_behaviour: ReplayDelayBehaviour::Recorded,
             concurrent_tap_hold: false,
             rapid_event_delay: 5,
+            max_layers_limit: 100,
             #[cfg(any(target_os = "linux", target_os = "unknown"))]
             linux_dev: vec![],
             #[cfg(any(target_os = "linux", target_os = "unknown"))]
@@ -418,6 +422,9 @@ pub fn parse_defcfg(expr: &[SExpr]) -> Result<CfgOptions> {
                     "rapid-event-delay" => {
                         cfg.rapid_event_delay = parse_cfg_val_u16(val, label, false)?
                     }
+                    "max-layer-limit" => {
+                        cfg.max_layers_limit = parse_cfg_val::<usize>(val, label, false)?
+                    }
                     _ => bail_expr!(key, "Unknown defcfg option {}", label),
                 };
             }
@@ -477,6 +484,52 @@ fn parse_cfg_val_u16(expr: &SExpr, label: &str, exclude_zero: bool) -> Result<u1
                 "The value for {label} cannot be a list, it must be a number {start}-65535",
             )
         }
+    }
+}
+
+fn parse_cfg_val<T>(expr: &SExpr, label: &str, exclude_zero: bool) -> Result<T>
+where
+    T: FromStr + Bounded + PartialEq + std::fmt::Display,
+    <T as FromStr>::Err: std::fmt::Debug,
+{
+    let start = if exclude_zero {
+        T::from_str("1")
+            .map_err(|e| anyhow_expr!(expr, "Failed to parse '1' for start value: {:?}", e))?
+    } else {
+        T::from_str("0")
+            .map_err(|e| anyhow_expr!(expr, "Failed to parse '0' for start value: {:?}", e))?
+    };
+    let end = T::max_value();
+
+    match expr {
+        SExpr::Atom(v) => {
+            let trimmed_value = v.t.trim_matches('"');
+            let parsed_value = trimmed_value.parse::<T>().map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to parse value for {}: {:?}, error: {:?}",
+                    label,
+                    trimmed_value,
+                    e
+                )
+            })?;
+
+            if exclude_zero
+                && parsed_value
+                    == T::from_str("0")
+                        .map_err(|e| anyhow_expr!(expr, "Failed to parse '0': {:?}", e))?
+            {
+                Err(anyhow_expr!(expr, "{} must be {}-{}", label, start, end))
+            } else {
+                Ok(parsed_value)
+            }
+        }
+        SExpr::List(_) => Err(anyhow_expr!(
+            expr,
+            "The value for {} cannot be a list, it must be a number {}-{}",
+            label,
+            start,
+            end,
+        )),
     }
 }
 
